@@ -1,5 +1,9 @@
 #include <gtk/gtk.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <cairo.h>
+
+static char *image_path = NULL;
 
 // Callback function for button clicks
 static void on_button1_clicked(GtkWidget *button, gpointer user_data) {
@@ -14,11 +18,35 @@ static void on_button3_clicked(GtkWidget *button, gpointer user_data) {
     g_print("Button 3 clicked\n");
 }
 
-// Function to render black background
-static void draw_black_background(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
-    cairo_set_source_rgb(cr, 0, 0, 0);  // Set color to black
-    cairo_rectangle(cr, 0, 0, width, height);
-    cairo_fill(cr);
+// Function to render image or black background if no image provided
+static void draw_image(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
+    if (!image_path) {
+        cairo_set_source_rgb(cr, 0, 0, 0); // Set color to black if no image is provided
+        cairo_rectangle(cr, 0, 0, width, height);
+        cairo_fill(cr);
+        return;
+    }
+
+    cairo_surface_t *image = cairo_image_surface_create_from_png(image_path);
+    if (!g_file_test(image_path, G_FILE_TEST_EXISTS)) {
+        g_printerr("Error: File not found - %s", image_path);
+        return;
+    }
+    if (cairo_surface_status(image) != CAIRO_STATUS_SUCCESS) {
+        g_print("Failed to load image: %s\n", image_path);
+        cairo_surface_destroy(image);
+        return;
+    }
+
+    int img_width = cairo_image_surface_get_width(image);
+    int img_height = cairo_image_surface_get_height(image);
+    double scale_x = (double)width / img_width;
+    double scale_y = (double)height / img_height;
+    double scale = scale_x < scale_y ? scale_x : scale_y;
+    cairo_scale(cr, scale, scale);
+    cairo_set_source_surface(cr, image, 0, 0);
+    cairo_paint(cr);
+    cairo_surface_destroy(image);
 }
 
 // Callback function for application activation
@@ -60,7 +88,7 @@ static void on_app_activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_set_hexpand(image_area, TRUE);
 
     // Set the drawing function for GTK4
-    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(image_area), draw_black_background, NULL, NULL);
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(image_area), draw_image, NULL, NULL);
 
     gtk_box_append(GTK_BOX(content_box), image_area);
 
@@ -78,15 +106,34 @@ static void on_app_activate(GtkApplication *app, gpointer user_data) {
     gtk_window_present(GTK_WINDOW(window));
 }
 
+static int on_command_line(GApplication *app, GApplicationCommandLine *cmdline, gpointer user_data) {
+    int argc;
+    char **argv = g_application_command_line_get_arguments(cmdline, &argc);
+
+    if (argc < 2) {
+        g_printerr("Usage: %s <image_file.png>", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    image_path = argv[1];
+    g_application_activate(app);
+    return EXIT_SUCCESS;
+}
+
 int main(int argc, char *argv[]) {
+    if (argc > 1) {
+        image_path = argv[1];
+    }
+
     // Initialize GTK application
     GtkApplication *app;
     int status;
 
-    app = gtk_application_new("com.example.HelloWorld", G_APPLICATION_DEFAULT_FLAGS);
+    app = gtk_application_new("com.example.HelloWorld", G_APPLICATION_HANDLES_COMMAND_LINE);
 
     // Activate signal for the application
     g_signal_connect(app, "activate", G_CALLBACK(on_app_activate), NULL);
+    g_signal_connect(app, "command-line", G_CALLBACK(on_command_line), NULL);
 
     // Run the application
     status = g_application_run(G_APPLICATION(app), argc, argv);

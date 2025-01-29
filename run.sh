@@ -1,3 +1,3 @@
 compile_gtk4 pixel.c
 
-./pixel
+./pixel reduced.png
