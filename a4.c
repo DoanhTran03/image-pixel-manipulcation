@@ -1,10 +1,89 @@
 #include <gtk/gtk.h>
+#include <stdio.h>
+#include <stdlib.h>
 
+#define ROWS 100
+#define COLS 6
 int r, g, b, a;
 static GtkWidget *color_box, *drawing_area;
 static GdkTexture *texture = NULL;
 cairo_surface_t *image_surface;
 int button = 0;
+
+unsigned char *data;
+int width, height, stride;
+
+// Queue structure
+typedef struct {
+    int data[ROWS][COLS];
+    int front, rear;
+} Queue;
+
+// Initialize queue
+void initQueue(Queue *q) {
+    q->front = -1;
+    q->rear = -1;
+}
+
+// Check if queue is empty
+int isEmpty(Queue *q) {
+    return q->front == -1;
+}
+
+// Check if queue is full
+int isFull(Queue *q) {
+    return q->rear == ROWS - 1;
+}
+
+// Enqueue operation
+void enqueue(Queue *q, int element[COLS]) {
+    if (isFull(q)) {
+        printf("Queue is full!\n");
+        return;
+    }
+    if (isEmpty(q)) {
+        q->front = 0;
+    }
+    q->rear++;
+    for (int i = 0; i < COLS; i++) {
+        q->data[q->rear][i] = element[i];
+    }
+}
+
+// Dequeue operation
+int* dequeue(Queue *q) {
+    if (isEmpty(q)) {
+        printf("Queue is empty!\n");
+        return NULL;
+    }
+    int* dequeuedElement = q->data[q->front];
+    
+    if (q->front == q->rear) {
+        q->front = q->rear = -1; // Reset queue when last element is dequeued
+    } else {
+        q->front++;
+    }
+    return dequeuedElement;
+}
+
+// Display queue contents
+void displayQueue(Queue *q) {
+    if (isEmpty(q)) {
+        printf("Queue is empty!\n");
+        return;
+    }
+    printf("Queue contents:\n");
+    for (int i = q->front; i <= q->rear; i++) {
+        for (int j = 0; j < COLS; j++) {
+            printf("%d ", q->data[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+int queue[100][6];
+Queue q_undo;
+Queue q_redo;
 
 static void getcolor (GtkWidget *widget, gpointer data)
 {
@@ -24,47 +103,27 @@ static void undo (GtkWidget *widget, gpointer data)
 }
 static void save (GtkWidget *widget, gpointer data)
 {
-  button = 5;
+  if (cairo_surface_write_to_png(image_surface, "output.png") != CAIRO_STATUS_SUCCESS) {
+        g_printerr("Failed to save the PNG file\n");
+    } else {
+        g_print("PNG file saved successfully\n");
+    }
 }
 
-static void get_pixel_color(double x, double y) {
-    if (!texture) return;
+static void save_surface_as_png(GtkWidget *widget, gpointer data) {
+    // Get the surface from the drawing area
+    cairo_surface_t *surface = (cairo_surface_t *) data;
 
-    int width = gdk_texture_get_width(texture);
-    int height = gdk_texture_get_height(texture);
-
-    // Ensure clicked coordinates are within bounds
-    if (x < 0 || y < 0 || x >= width || y >= height) return;
-
-    // Create buffer to store pixel data
-    int stride = width * 4; // 4 bytes per pixel (RGBA)
-    guchar *pixel_data = g_malloc(stride * height);
-    if (!pixel_data) return;
-
-    // Download texture pixels into buffer
-    gdk_texture_download(texture, pixel_data, stride);
-
-    // Get pixel color at (x, y)
-    int row = ((int)y) * stride;
-    int col = ((int)x) * 4; // 4 bytes per pixel
-
-    b = pixel_data[row + col + 0]; // Red
-    g = pixel_data[row + col + 1]; // Green
-    r = pixel_data[row + col + 2]; // Blue
-    a = pixel_data[row + col + 3]; // Alpha
-
-    g_print("Color at (%.2f, %.2f): R=%d, G=%d, B=%d, A=%d\n", x, y, r, g, b, a);
-    // Free allocated memory
-    g_free(pixel_data);
+    // Save the surface as a PNG file
+    if (cairo_surface_write_to_png(surface, "output.png") != CAIRO_STATUS_SUCCESS) {
+        g_printerr("Failed to save the PNG file\n");
+    } else {
+        g_print("PNG file saved successfully\n");
+    }
 }
 
 void get_pixel_color_cairo(double x, double y) {
     if (!image_surface) return;
-    unsigned char *data = cairo_image_surface_get_data(image_surface);
-    int width = cairo_image_surface_get_width(image_surface);
-    int height = cairo_image_surface_get_height(image_surface);
-    int stride = cairo_image_surface_get_stride(image_surface);
-    cairo_format_t format = cairo_image_surface_get_format(image_surface);
 
     if (x < 0 || x >= width || y < 0 || y >= height) {
         printf("Coordinates out of bounds\n");
@@ -80,14 +139,8 @@ void get_pixel_color_cairo(double x, double y) {
 
     printf("Pixel at (%.2f, %.2f): R=%d, G=%d, B=%d, A=%d\n", x, y, r, g, b, a);
 }
-
-void change_pixel_color(double x, double y, int red, int green, int blue) {
+void change_pixel_color(double x, double y, int red, int green, int blue, int alpha) {
     if (!image_surface) return;
-
-    unsigned char *data = cairo_image_surface_get_data(image_surface);
-    int width = cairo_image_surface_get_width(image_surface);
-    int height = cairo_image_surface_get_height(image_surface);
-    int stride = cairo_image_surface_get_stride(image_surface);
 
     if (x < 0 || x >= width || y < 0 || y >= height) {
         g_print("Pixel out of bounds\n");
@@ -98,7 +151,14 @@ void change_pixel_color(double x, double y, int red, int green, int blue) {
     data[offset] = blue;   // Blue
     data[offset + 1] = green; // Green
     data[offset + 2] = red;   // Red
-    data[offset + 3] = 255;   // Alpha (fully opaque)
+    data[offset + 3] = alpha;   // Alpha (fully opaque)
+
+    if(button == 2) {
+        int element[6] = {x,y,red,green,blue,alpha};
+        enqueue(&q_undo, element);
+        displayQueue(&q_undo);
+    }
+
     
     cairo_surface_flush(image_surface); // Ensure changes are written
 
@@ -111,7 +171,7 @@ static void on_mouse_click(GtkGestureClick *gesture, int n_press, double x, doub
         get_pixel_color_cairo(x, y);
     }
     if(button == 2);   {
-        change_pixel_color(x, y, r, g, b);
+        change_pixel_color(x, y, r, g, b, a);
     }
 }
 
@@ -159,6 +219,11 @@ static void activate (GtkApplication* app, gpointer user_data)
         g_printerr("Cairo error status: %d\n", status);
         return;
     }
+
+    data = cairo_image_surface_get_data(image_surface);
+    width = cairo_image_surface_get_width(image_surface);
+    height = cairo_image_surface_get_height(image_surface);
+    stride = cairo_image_surface_get_stride(image_surface);
     //Loading window, button, and picture
     GtkWidget *button;
 
