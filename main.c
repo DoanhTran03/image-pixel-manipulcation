@@ -1,32 +1,47 @@
 #include "stack.h"
 
-// To compile, run: gcc -o main main.c lib/stack.c -Ilib
+// To compile, run: gcc -o main main.c lib/redo_stack.c -Ilib
 
 int main() {
-    Object obj1 = {10, 20, 255, 0, 0, 255};
-    Object obj2 = {30, 40, 0, 255, 0, 255};
-    Object obj3 = {50, 60, 0, 0, 255, 255};
+    Pixel obj1 = {10, 20, 255, 0, 0, 255};
+    Pixel obj2 = {30, 40, 0, 255, 0, 255};
+    Pixel obj3 = {50, 60, 0, 0, 255, 255};
     
-    push(obj1);
-    push(obj2);
-    push(obj3);
-    display();
+    redo_push(obj1);
+    redo_push(obj2);
+    redo_push(obj3);
+
+    undo_push(obj1);
+    undo_push(obj2);
+    undo_push(obj3);
+
+    redo_display();
+    undo_display();
     
-    pop();
-    display();
+    redo_pop();
+    redo_display();
     
-    Object obj4 = {70, 80, 255, 255, 0, 255};
-    Object obj5 = {90, 100, 128, 128, 128, 255};
-    Object obj6 = {110, 120, 76, 76, 76, 255};
+    Pixel obj4 = {70, 80, 255, 255, 0, 255};
+    Pixel obj5 = {90, 100, 128, 128, 128, 255};
+    Pixel obj6 = {110, 120, 76, 76, 76, 255};
     
-    push(obj4);
-    push(obj5);
-    push(obj6);
-    display();
+    redo_push(obj4);
+    redo_push(obj5);
+    redo_push(obj6);
+
+    undo_push(obj4);
+    undo_push(obj5);
+    undo_push(obj6);
+
+    redo_display();
     
-    pop();
-    pop();
-    display();
+    redo_pop();
+    redo_pop();
+    redo_display();
+
+    undo_pop();
+    undo_pop();
+    undo_display();
     
     return 0;
 }
