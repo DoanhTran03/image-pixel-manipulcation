@@ -26,6 +26,38 @@ static void save (GtkWidget *widget, gpointer data)
 {
   button = 5;
 }
+
+static void get_pixel_color(double x, double y) {
+    if (!texture) return;
+
+    int width = gdk_texture_get_width(texture);
+    int height = gdk_texture_get_height(texture);
+
+    // Ensure clicked coordinates are within bounds
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+
+    // Create buffer to store pixel data
+    int stride = width * 4; // 4 bytes per pixel (RGBA)
+    guchar *pixel_data = g_malloc(stride * height);
+    if (!pixel_data) return;
+
+    // Download texture pixels into buffer
+    gdk_texture_download(texture, pixel_data, stride);
+
+    // Get pixel color at (x, y)
+    int row = ((int)y) * stride;
+    int col = ((int)x) * 4; // 4 bytes per pixel
+
+    b = pixel_data[row + col + 0]; // Red
+    g = pixel_data[row + col + 1]; // Green
+    r = pixel_data[row + col + 2]; // Blue
+    a = pixel_data[row + col + 3]; // Alpha
+
+    g_print("Color at (%.2f, %.2f): R=%d, G=%d, B=%d, A=%d\n", x, y, r, g, b, a);
+    // Free allocated memory
+    g_free(pixel_data);
+}
+
 void get_pixel_color_cairo(double x, double y) {
     if (!image_surface) return;
     unsigned char *data = cairo_image_surface_get_data(image_surface);
@@ -40,7 +72,7 @@ void get_pixel_color_cairo(double x, double y) {
         return;
     }
 
-    int pixel_offset = y * stride + x * 4; // Assuming CAIRO_FORMAT_ARGB32
+    int pixel_offset = (int)y * stride + (int)x * 4; // Assuming CAIRO_FORMAT_ARGB32
     b = data[pixel_offset + 0]; // Blue
     g = data[pixel_offset + 1]; // Green
     r = data[pixel_offset + 2]; // Red
@@ -75,7 +107,8 @@ void change_pixel_color(double x, double y, int red, int green, int blue) {
 static void on_mouse_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
     g_print("Mouse clicked at (%.2f, %.2f) with %d presses\n", x, y, n_press);
     if(button == 1) {
-        get_pixel_color_cairo(x, y);}
+        get_pixel_color_cairo(x, y);
+    }
     if(button == 2);   {
         change_pixel_color(x, y, r, g, b);
     }
@@ -101,19 +134,12 @@ static void on_color_box_draw(GtkDrawingArea *area, cairo_t *cr, int width, int 
     cairo_show_text(cr, iteration_label);
 }
 gboolean on_timer(gpointer user_data) {
-    if(drawing_area)    {
-        gtk_widget_queue_draw(drawing_area);
-        }
-    if(color_box)   {
-        gtk_widget_queue_draw(color_box);
-        }
+    gtk_widget_queue_draw(drawing_area);
+    gtk_widget_queue_draw(color_box);
     return TRUE;
 }
 
 static void on_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
-    int w = cairo_image_surface_get_width(image_surface);
-    int h = cairo_image_surface_get_height(image_surface);
-
     // Draw the image
     cairo_set_source_surface(cr, image_surface, 0, 0);
     cairo_paint(cr);
@@ -180,6 +206,8 @@ static void activate (GtkApplication* app, gpointer user_data)
     gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(drawing_area), 700);
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(drawing_area), on_draw, NULL, NULL);
     
+    //g_timeout_add(16, on_timer, color_box);
+
     ////Loading mouse click event using gesture
     gtk_widget_set_hexpand(drawing_area, TRUE);
     gtk_widget_set_vexpand(drawing_area, TRUE);
@@ -198,6 +226,7 @@ static void activate (GtkApplication* app, gpointer user_data)
     gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(click_gesture));
 
     gtk_window_present (GTK_WINDOW (window));
+    
 }
 
 int main (int argc, char **argv)
