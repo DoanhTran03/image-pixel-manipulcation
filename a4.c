@@ -1,9 +1,8 @@
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "stack.h"
 
-#define ROWS 100
-#define COLS 6
 int r, g, b, a;
 static GtkWidget *color_box, *drawing_area;
 static GdkTexture *texture = NULL;
@@ -12,103 +11,6 @@ int button = 0;
 
 unsigned char *data;
 int width, height, stride;
-
-// Queue structure
-typedef struct {
-    int data[ROWS][COLS];
-    int front, rear;
-} Queue;
-
-// Initialize queue
-void initQueue(Queue *q) {
-    q->front = -1;
-    q->rear = -1;
-}
-
-// Check if queue is empty
-int isEmpty(Queue *q) {
-    return q->front == -1;
-}
-
-// Check if queue is full
-int isFull(Queue *q) {
-    return q->rear == ROWS - 1;
-}
-
-// Enqueue operation
-void enqueue(Queue *q, int element[COLS]) {
-    if (isFull(q)) {
-        printf("Queue is full!\n");
-        return;
-    }
-    if (isEmpty(q)) {
-        q->front = 0;
-    }
-    q->rear++;
-    for (int i = 0; i < COLS; i++) {
-        q->data[q->rear][i] = element[i];
-    }
-}
-
-// Dequeue operation
-int* dequeue(Queue *q) {
-    if (isEmpty(q)) {
-        printf("Queue is empty!\n");
-        return NULL;
-    }
-    int* dequeuedElement = q->data[q->front];
-    
-    if (q->front == q->rear) {
-        q->front = q->rear = -1; // Reset queue when last element is dequeued
-    } else {
-        q->front++;
-    }
-    return dequeuedElement;
-}
-
-// Display queue contents
-void displayQueue(Queue *q) {
-    if (isEmpty(q)) {
-        printf("Queue is empty!\n");
-        return;
-    }
-    printf("Queue contents:\n");
-    for (int i = q->front; i <= q->rear; i++) {
-        for (int j = 0; j < COLS; j++) {
-            printf("%d ", q->data[i][j]);
-        }
-        printf("\n");
-    }
-}
-
-int queue[100][6];
-Queue q_undo;
-Queue q_redo;
-
-static void getcolor (GtkWidget *widget, gpointer data)
-{
-  button = 1;
-}
-static void paint (GtkWidget *widget, gpointer data)
-{
-  button = 2;
-}
-static void redo (GtkWidget *widget, gpointer data)
-{
-  button = 3;
-}
-static void undo (GtkWidget *widget, gpointer data)
-{
-  button = 4;
-}
-static void save (GtkWidget *widget, gpointer data)
-{
-  if (cairo_surface_write_to_png(image_surface, "output.png") != CAIRO_STATUS_SUCCESS) {
-        g_printerr("Failed to save the PNG file\n");
-    } else {
-        g_print("PNG file saved successfully\n");
-    }
-}
 
 static void save_surface_as_png(GtkWidget *widget, gpointer data) {
     // Get the surface from the drawing area
@@ -146,23 +48,29 @@ void change_pixel_color(double x, double y, int red, int green, int blue, int al
         g_print("Pixel out of bounds\n");
         return;
     }
+    //get the current color
+    get_pixel_color_cairo(x,y);
 
-    int offset = y * stride + x * 4; // Each pixel has 4 bytes (RGBA)
+    //change the pixel color to the new color
+    int offset = (int)y * stride + (int)x * 4; // Each pixel has 4 bytes (RGBA)
     data[offset] = blue;   // Blue
     data[offset + 1] = green; // Green
     data[offset + 2] = red;   // Red
     data[offset + 3] = alpha;   // Alpha (fully opaque)
-
     if(button == 2) {
-        int element[6] = {x,y,red,green,blue,alpha};
-        enqueue(&q_undo, element);
-        displayQueue(&q_undo);
+        //push on the stack for undo with the current color
+        Pixel element = {x, y, r, g, b, a};
+        undo_push(element);
+        //display();
     }
 
-    
-    cairo_surface_flush(image_surface); // Ensure changes are written
+    //assigning back the new color
+    r = red;
+    g = green;
+    b = blue;
+    a = alpha;
 
-    //image_surface = cairo_image_surface_create_for_data(data, CAIRO_FORMAT_ARGB32, width, height, stride);
+    cairo_surface_flush(image_surface); // Ensure changes are written
 }
 
 static void on_mouse_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
@@ -173,8 +81,8 @@ static void on_mouse_click(GtkGestureClick *gesture, int n_press, double x, doub
     if(button == 2);   {
         change_pixel_color(x, y, r, g, b, a);
     }
-}
 
+}
 void set_color(cairo_t *cr) {
     double red = (double)r/255.0;
     double green = (double)g/255.0;
@@ -183,6 +91,43 @@ void set_color(cairo_t *cr) {
     cairo_set_source_rgba(cr, red, green, blue, alpha);
 }
 
+static void getcolor (GtkWidget *widget, gpointer data)
+{
+  button = 1;
+}
+static void paint (GtkWidget *widget, gpointer data)
+{
+  button = 2;
+}
+static void redo (GtkWidget *widget, gpointer data)
+{
+  button = 3;
+  if(redo_isEmpty()) {
+    return;
+  }
+  Pixel element = redo_pop();
+  change_pixel_color((double)element.x, (double)element.y, element.r, element.g, element.b, element.a);
+}
+static void undo (GtkWidget *widget, gpointer data)
+{
+  button = 4;
+  if(undo_isEmpty()) { 
+    return;
+  }
+  Pixel element = undo_pop();
+  get_pixel_color_cairo(element.x, element.y);
+  Pixel redo_element = {element.x, element.y, r, g, b};
+  redo_push(redo_element);
+  change_pixel_color((double)element.x, (double)element.y, element.r, element.g, element.b, element.a);
+}
+static void save (GtkWidget *widget, gpointer data)
+{
+  if (cairo_surface_write_to_png(image_surface, "output.png") != CAIRO_STATUS_SUCCESS) {
+        g_printerr("Failed to save the PNG file\n");
+    } else {
+        g_print("PNG file saved successfully\n");
+    }
+}
 static void on_color_box_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
     set_color(cr);
     cairo_rectangle(cr, 0, 0, 100, 100);
@@ -195,7 +140,6 @@ static void on_color_box_draw(GtkDrawingArea *area, cairo_t *cr, int width, int 
     sprintf(iteration_label, "Color");
     cairo_show_text(cr, iteration_label);
 }
-
 gboolean on_timer(gpointer user_data) {
     gtk_widget_queue_draw(drawing_area);
     gtk_widget_queue_draw(color_box);
@@ -240,23 +184,23 @@ static void activate (GtkApplication* app, gpointer user_data)
     /* Pack the container in the window */
     gtk_box_append(GTK_BOX(vbox), grid);
 
-    button = gtk_button_new_with_label ("Button 1");
+    button = gtk_button_new_with_label ("getcolor");
     g_signal_connect (button, "clicked", G_CALLBACK (getcolor), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 0, 0, 1, 1);
 
-    button = gtk_button_new_with_label ("Button 2");
+    button = gtk_button_new_with_label ("paint");
     g_signal_connect (button, "clicked", G_CALLBACK (paint), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 1, 0, 1, 1);
 
-    button = gtk_button_new_with_label ("Button 3");
+    button = gtk_button_new_with_label ("redo");
     g_signal_connect (button, "clicked", G_CALLBACK (redo), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 2, 0, 1, 1);
 
-    button = gtk_button_new_with_label ("Button 4");
+    button = gtk_button_new_with_label ("undo");
     g_signal_connect (button, "clicked", G_CALLBACK (undo), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 3, 0, 1, 1);
 
-    button = gtk_button_new_with_label ("Button 5");
+    button = gtk_button_new_with_label ("save");
     g_signal_connect (button, "clicked", G_CALLBACK (save), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 4, 0, 1, 1);
 
@@ -266,7 +210,6 @@ static void activate (GtkApplication* app, gpointer user_data)
 
     // Add widgets to layout
     gtk_grid_attach (GTK_GRID (grid), color_box, 5, 0, 1, 1);
-    //gtk_box_append(GTK_BOX(vbox), color_box);
 
     drawing_area = gtk_drawing_area_new();
     gtk_box_append(GTK_BOX(vbox), drawing_area);
@@ -274,13 +217,10 @@ static void activate (GtkApplication* app, gpointer user_data)
     gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(drawing_area), 700);
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(drawing_area), on_draw, NULL, NULL);
     
-    //g_timeout_add(16, on_timer, color_box);
-
     ////Loading mouse click event using gesture
     gtk_widget_set_hexpand(drawing_area, TRUE);
     gtk_widget_set_vexpand(drawing_area, TRUE);
 
-    //g_timeout_add(16, on_timer, vbox);
     g_timeout_add(16, on_timer, NULL);
 
     // Create a mouse click gesture detector
@@ -294,7 +234,6 @@ static void activate (GtkApplication* app, gpointer user_data)
     gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(click_gesture));
 
     gtk_window_present (GTK_WINDOW (window));
-    
 }
 
 int main (int argc, char **argv)
