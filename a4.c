@@ -80,6 +80,7 @@ void get_pixel_color_cairo(double x, double y) {
 
     printf("Pixel at (%.2f, %.2f): R=%d, G=%d, B=%d, A=%d\n", x, y, r, g, b, a);
 }
+
 void change_pixel_color(double x, double y, int red, int green, int blue) {
     if (!image_surface) return;
 
@@ -112,8 +113,8 @@ static void on_mouse_click(GtkGestureClick *gesture, int n_press, double x, doub
     if(button == 2);   {
         change_pixel_color(x, y, r, g, b);
     }
-
 }
+
 void set_color(cairo_t *cr) {
     double red = (double)r/255.0;
     double green = (double)g/255.0;
@@ -121,6 +122,7 @@ void set_color(cairo_t *cr) {
     double alpha = (double)a/255.0;
     cairo_set_source_rgba(cr, red, green, blue, alpha);
 }
+
 static void on_color_box_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
     set_color(cr);
     cairo_rectangle(cr, 0, 0, 100, 100);
@@ -133,6 +135,7 @@ static void on_color_box_draw(GtkDrawingArea *area, cairo_t *cr, int width, int 
     sprintf(iteration_label, "Color");
     cairo_show_text(cr, iteration_label);
 }
+
 gboolean on_timer(gpointer user_data) {
     gtk_widget_queue_draw(drawing_area);
     gtk_widget_queue_draw(color_box);
