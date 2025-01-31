@@ -5,7 +5,7 @@
 
 typedef struct {
     int x, y;
-    float r, g, b, a;
+    int r, g, b, a;
 } Object;
 
 Object queue[SIZE];
