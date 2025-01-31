@@ -1,48 +1,84 @@
 #include <gtk/gtk.h>
 
 int r, g, b, a;
-static GtkWidget *color_box;
+static GtkWidget *color_box, *drawing_area;
 static GdkTexture *texture = NULL;
+cairo_surface_t *image_surface;
+int button = 0;
 
-static void print_hello (GtkWidget *widget, gpointer data)
+static void getcolor (GtkWidget *widget, gpointer data)
 {
-  g_print ("Hello World\n");
+  button = 1;
 }
+static void paint (GtkWidget *widget, gpointer data)
+{
+  button = 2;
+}
+static void redo (GtkWidget *widget, gpointer data)
+{
+  button = 3;
+}
+static void undo (GtkWidget *widget, gpointer data)
+{
+  button = 4;
+}
+static void save (GtkWidget *widget, gpointer data)
+{
+  button = 5;
+}
+void get_pixel_color_cairo(double x, double y) {
+    if (!image_surface) return;
+    unsigned char *data = cairo_image_surface_get_data(image_surface);
+    int width = cairo_image_surface_get_width(image_surface);
+    int height = cairo_image_surface_get_height(image_surface);
+    int stride = cairo_image_surface_get_stride(image_surface);
+    cairo_format_t format = cairo_image_surface_get_format(image_surface);
 
-static void get_pixel_color(double x, double y) {
-    if (!texture) return;
+    if (x < 0 || x >= width || y < 0 || y >= height) {
+        printf("Coordinates out of bounds\n");
+        
+        return;
+    }
 
-    int width = gdk_texture_get_width(texture);
-    int height = gdk_texture_get_height(texture);
+    int pixel_offset = y * stride + x * 4; // Assuming CAIRO_FORMAT_ARGB32
+    b = data[pixel_offset + 0]; // Blue
+    g = data[pixel_offset + 1]; // Green
+    r = data[pixel_offset + 2]; // Red
+    a = data[pixel_offset + 3]; // Alpha
 
-    // Ensure clicked coordinates are within bounds
-    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    printf("Pixel at (%.2f, %.2f): R=%d, G=%d, B=%d, A=%d\n", x, y, r, g, b, a);
+}
+void change_pixel_color(double x, double y, int red, int green, int blue) {
+    if (!image_surface) return;
 
-    // Create buffer to store pixel data
-    int stride = width * 4; // 4 bytes per pixel (RGBA)
-    guchar *pixel_data = g_malloc(stride * height);
-    if (!pixel_data) return;
+    unsigned char *data = cairo_image_surface_get_data(image_surface);
+    int width = cairo_image_surface_get_width(image_surface);
+    int height = cairo_image_surface_get_height(image_surface);
+    int stride = cairo_image_surface_get_stride(image_surface);
 
-    // Download texture pixels into buffer
-    gdk_texture_download(texture, pixel_data, stride);
+    if (x < 0 || x >= width || y < 0 || y >= height) {
+        g_print("Pixel out of bounds\n");
+        return;
+    }
 
-    // Get pixel color at (x, y)
-    int row = ((int)y) * stride;
-    int col = ((int)x) * 4; // 4 bytes per pixel
+    int offset = y * stride + x * 4; // Each pixel has 4 bytes (RGBA)
+    data[offset] = blue;   // Blue
+    data[offset + 1] = green; // Green
+    data[offset + 2] = red;   // Red
+    data[offset + 3] = 255;   // Alpha (fully opaque)
+    
+    cairo_surface_flush(image_surface); // Ensure changes are written
 
-    b = pixel_data[row + col + 0]; // Red
-    g = pixel_data[row + col + 1]; // Green
-    r = pixel_data[row + col + 2]; // Blue
-    a = pixel_data[row + col + 3]; // Alpha
-
-    g_print("Color at (%.2f, %.2f): R=%d, G=%d, B=%d, A=%d\n", x, y, r, g, b, a);
-    // Free allocated memory
-    g_free(pixel_data);
+    //image_surface = cairo_image_surface_create_for_data(data, CAIRO_FORMAT_ARGB32, width, height, stride);
 }
 
 static void on_mouse_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
     g_print("Mouse clicked at (%.2f, %.2f) with %d presses\n", x, y, n_press);
-    get_pixel_color(x, y);
+    if(button == 1) {
+        get_pixel_color_cairo(x, y);}
+    if(button == 2);   {
+        change_pixel_color(x, y, r, g, b);
+    }
 
 }
 void set_color(cairo_t *cr) {
@@ -65,72 +101,35 @@ static void on_color_box_draw(GtkDrawingArea *area, cairo_t *cr, int width, int 
     cairo_show_text(cr, iteration_label);
 }
 gboolean on_timer(gpointer user_data) {
-    GtkWidget *drawing_area = GTK_WIDGET(user_data);
-    gtk_widget_queue_draw(drawing_area);
+    if(drawing_area)    {
+        gtk_widget_queue_draw(drawing_area);
+        }
+    if(color_box)   {
+        gtk_widget_queue_draw(color_box);
+        }
     return TRUE;
 }
 
-static gboolean on_mouse_press(GtkWidget *widget, GdkEvent *event, gpointer data) {
-    double x, y;
+static void on_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
+    int w = cairo_image_surface_get_width(image_surface);
+    int h = cairo_image_surface_get_height(image_surface);
 
-    // Get the position of the event (mouse click)
-    gdk_event_get_position(event, &x, &y);
-
-    // Print the position
-    g_print("Mouse clicked at position: (%d, %d)\n", x, y);
-
-    return FALSE; // Returning FALSE allows the event to propagate further
+    // Draw the image
+    cairo_set_source_surface(cr, image_surface, 0, 0);
+    cairo_paint(cr);
 }
 
-
-static void on_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
+static void activate (GtkApplication* app, gpointer user_data)
+{   
     const char *image_path = "test.png"; // Replace with your image file path
-    cairo_surface_t *image_surface;
-
     // Load the image
     image_surface = cairo_image_surface_create_from_png(image_path);
-    texture = gdk_texture_new_from_filename(image_path, NULL);
-
-    //texture = gdk_texture_new_for_surface(image_surface);
-
-
-    // Check for errors
     if (cairo_surface_status(image_surface) != CAIRO_STATUS_SUCCESS) {
         g_printerr("Failed to load image: %s\n", image_path);
         cairo_status_t status = cairo_surface_status(image_surface);
         g_printerr("Cairo error status: %d\n", status);
         return;
     }
-
-    //Scaling the image, will not work when load the picture to have the color
-    // Get image dimensions
-    // int img_width = cairo_image_surface_get_width(image_surface);
-    // int img_height = cairo_image_surface_get_height(image_surface);
-
-    // // Scale the image to fit the drawing area
-    // double scale_x = (double)width / img_width;
-    // double scale_y = (double)height / img_height;
-    // double scale = (scale_x < scale_y) ? scale_x : scale_y;
-
-    // // Center the image in the drawing area
-    // double offset_x = (width - img_width * scale) / 2.0;
-    // double offset_y = (height - img_height * scale) / 2.0;
-
-    // // Apply transformations
-    // cairo_translate(cr, offset_x, offset_y);
-    // cairo_scale(cr, scale, scale);
-
-    // Draw the image
-    cairo_set_source_surface(cr, image_surface, 0, 0);
-    cairo_paint(cr);
-
-    // Clean up
-    cairo_surface_destroy(image_surface);
-}
-
-static void activate (GtkApplication* app, gpointer user_data)
-{   
-
     //Loading window, button, and picture
     GtkWidget *button;
 
@@ -148,23 +147,23 @@ static void activate (GtkApplication* app, gpointer user_data)
     gtk_box_append(GTK_BOX(vbox), grid);
 
     button = gtk_button_new_with_label ("Button 1");
-    g_signal_connect (button, "clicked", G_CALLBACK (on_mouse_press), NULL);
+    g_signal_connect (button, "clicked", G_CALLBACK (getcolor), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 0, 0, 1, 1);
 
     button = gtk_button_new_with_label ("Button 2");
-    g_signal_connect (button, "clicked", G_CALLBACK (print_hello), NULL);
+    g_signal_connect (button, "clicked", G_CALLBACK (paint), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 1, 0, 1, 1);
 
     button = gtk_button_new_with_label ("Button 3");
-    g_signal_connect (button, "clicked", G_CALLBACK (print_hello), NULL);
+    g_signal_connect (button, "clicked", G_CALLBACK (redo), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 2, 0, 1, 1);
 
     button = gtk_button_new_with_label ("Button 4");
-    g_signal_connect (button, "clicked", G_CALLBACK (print_hello), NULL);
+    g_signal_connect (button, "clicked", G_CALLBACK (undo), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 3, 0, 1, 1);
 
     button = gtk_button_new_with_label ("Button 5");
-    g_signal_connect (button, "clicked", G_CALLBACK (print_hello), NULL);
+    g_signal_connect (button, "clicked", G_CALLBACK (save), NULL);
     gtk_grid_attach (GTK_GRID (grid), button, 4, 0, 1, 1);
 
     color_box = gtk_drawing_area_new();
@@ -174,17 +173,19 @@ static void activate (GtkApplication* app, gpointer user_data)
     // Add widgets to layout
     gtk_grid_attach (GTK_GRID (grid), color_box, 5, 0, 1, 1);
     //gtk_box_append(GTK_BOX(vbox), color_box);
-    g_timeout_add(16, on_timer, color_box);
 
-    GtkWidget *drawing_area = gtk_drawing_area_new();
+    drawing_area = gtk_drawing_area_new();
     gtk_box_append(GTK_BOX(vbox), drawing_area);
     gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(drawing_area), 700);
     gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(drawing_area), 700);
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(drawing_area), on_draw, NULL, NULL);
-
+    
     ////Loading mouse click event using gesture
     gtk_widget_set_hexpand(drawing_area, TRUE);
     gtk_widget_set_vexpand(drawing_area, TRUE);
+
+    //g_timeout_add(16, on_timer, vbox);
+    g_timeout_add(16, on_timer, NULL);
 
     // Create a mouse click gesture detector
     GtkGesture *click_gesture = gtk_gesture_click_new();
@@ -197,7 +198,6 @@ static void activate (GtkApplication* app, gpointer user_data)
     gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(click_gesture));
 
     gtk_window_present (GTK_WINDOW (window));
-    
 }
 
 int main (int argc, char **argv)
