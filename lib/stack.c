@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#define SIZE 5  // Define the maximum size of the undo_stack
+#define SIZE 100  // Define the maximum size of the undo_stack
 
 typedef struct {
     int x, y;
