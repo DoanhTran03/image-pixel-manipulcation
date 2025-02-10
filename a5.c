@@ -50,19 +50,21 @@ void change_pixel_color(double x, double y, int red, int green, int blue, int al
     }
     //get the current color
     get_pixel_color_cairo(x,y);
-
+    // if(button == 3) {
+    //     printf("Redu Pixel at (%.2f, %.2f): R=%d, G=%d, B=%d, A=%d\n", x, y, red, green, blue, alpha);
+    // }
     //change the pixel color to the new color
     int offset = (int)y * stride + (int)x * 4; // Each pixel has 4 bytes (RGBA)
     data[offset] = blue;   // Blue
     data[offset + 1] = green; // Green
     data[offset + 2] = red;   // Red
-    data[offset + 3] = alpha;   // Alpha (fully opaque)
+    data[offset + 3] = 255;   // Alpha (fully opaque)
     if(button == 2) {
         //push on the stack for undo with the current color
         Pixel element = {x, y, r, g, b, a};
         undo_push(element);
-        //display();
     }
+    //printf("\nday la r %d g %d b %d \n", r, g, b);
 
     //assigning back the new color
     r = red;
@@ -70,16 +72,26 @@ void change_pixel_color(double x, double y, int red, int green, int blue, int al
     b = blue;
     a = alpha;
 
+    //printf("\n sau day la r %d g %d b %d \n", r, g, b);
+
+
     cairo_surface_flush(image_surface); // Ensure changes are written
 }
 
 static void on_mouse_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
     g_print("Mouse clicked at (%.2f, %.2f) with %d presses\n", x, y, n_press);
-    if(button == 1) {
-        get_pixel_color_cairo(x, y);
+    if(button == 0) {
+        return;
     }
-    if(button == 2);   {
+    else if(button == 1) {
+        get_pixel_color_cairo(x, y);
+        g_print("1");
+        return;
+    }
+    else if(button == 2);   {
         change_pixel_color(x, y, r, g, b, a);
+        g_print("2");
+        return;
     }
 
 }
@@ -106,6 +118,7 @@ static void redo (GtkWidget *widget, gpointer data)
     return;
   }
   Pixel element = redo_pop();
+  printf("Redo at (%.2f, %.2f): R=%d, G=%d, B=%d, A=%d\n", (double)element.x, (double)element.y, element.r, element.g, element.b, element.a);
   change_pixel_color((double)element.x, (double)element.y, element.r, element.g, element.b, element.a);
 }
 static void undo (GtkWidget *widget, gpointer data)
